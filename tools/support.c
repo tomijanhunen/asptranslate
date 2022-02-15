@@ -18,9 +18,9 @@
 */
 
 /*
- * SUPPORT -- Capture supported models of normal program
+ * SUPPORT -- Capture supported models of a logic program
  *
- * (c) 2005 Tomi Janhunen
+ * (c) 2005, 2022 Tomi Janhunen
  *
  * Main program and routines for rule level translation
  */
@@ -42,13 +42,11 @@ void _version_support_c()
 {
   fprintf(stderr, "%s: version information:\n", program_name);
   _version("$RCSfile: support.c,v $",
-	   "$Date: 2021/05/27 11:29:30 $",
-	   "$Revision: 1.8 $");
+	   "$Date: 2022/02/15 16:07:38 $",
+	   "$Revision: 1.9 $");
   _version_atom_c();
   _version_rule_c();
   _version_input_c();
-  _version_scc_c();
-  _version_counter_c();
 }
 
 void usage()
@@ -124,7 +122,7 @@ int main(int argc, char **argv)
     exit(-1);
   }
 
-  /* Read in logic programs */
+  /* Read in logic program */
 
   if(file == NULL)
     file = "-";
@@ -147,8 +145,28 @@ int main(int argc, char **argv)
   size = table_size(table);
   negtable = copy_table(table);
   set_shift(negtable, size);
-  set_prefix(negtable, "_neg_");
+  set_prefix(negtable, "_not_");
 
+  /* Mark positive occurrences */
+
+  scan = program;
+  while(scan) {
+    /* Skip headless rules which do not contribute to support */
+    if(scan->type == TYPE_INTEGRITY || scan->type == TYPE_OPTIMIZE)
+      continue;
+    else {
+      int pos_cnt = get_pos_cnt(scan);
+      int *pos = get_pos(scan);
+
+      int i = 0;
+
+      for(i=0; i<pos_cnt; i++)
+	set_status(table, pos[i], MARK_POSOCC);
+    }
+      
+    scan = scan->next;
+  }
+  
   /* Produce the desired output */
 
   if(option_verbose) { /* Use symbolic (human readable) format */
@@ -230,15 +248,34 @@ void define_complement(int style, FILE *out, int atom,
   return;
 }
 
-void tr_atom_list(int style, FILE *out, int cnt, int *atoms,
+void tr_head_list(int style, FILE *out, int cnt, int *atoms,
+		  int *weights, ATAB *table)
+{
+  int i = 0;
+
+  /* Needed by disjunctive rules only */
+  
+  while(i<cnt) {
+    write_atom(style, out, atoms[i], table);
+    if(style == STYLE_READABLE && weights)
+      fprintf(out, "=%i", weights[i]);
+    i++;
+    if(style == STYLE_READABLE && i<cnt)
+      fputs(" | ", out);
+  }
+
+  return;
+}
+
+void tr_body_list(int style, FILE *out, int cnt, int *atoms,
 		  int *weights, ATAB *table)
 {
   int i = 0;
 
   while(i<cnt) {
     if(style == STYLE_READABLE)
-      fputs("not ", out);
-    write_atom_if_possible(style, out, atoms[i], table);
+      fputs("not ", out);  /* All negated */
+    write_atom(style, out, atoms[i], table);
     if(style == STYLE_READABLE && weights)
       fprintf(out, "=%i", weights[i]);
     i++;
@@ -262,18 +299,18 @@ void tr_basic_as_atomic(int style, FILE *out,
     write_atom(style, out, head, table);
     if(pos_cnt || neg_cnt)
       fprintf(out, " :- ");
-    tr_atom_list(style, out, pos_cnt, basic->pos, NULL, negtable);
+    tr_body_list(style, out, pos_cnt, basic->pos, NULL, negtable);
     if(pos_cnt && neg_cnt)
       fprintf(out, ", ");
-    tr_atom_list(style, out, neg_cnt, basic->neg, NULL, table);
+    tr_body_list(style, out, neg_cnt, basic->neg, NULL, table);
     fprintf(out, ".\n");
 
   } else if(style == STYLE_SMODELS) {
 
     fprintf(out, "1 %i", head);
     fprintf(out, " %i %i", pos_cnt+neg_cnt, pos_cnt+neg_cnt);
-    tr_atom_list(style, out, pos_cnt, basic->pos, NULL, negtable);
-    tr_atom_list(style, out, neg_cnt, basic->neg, NULL, table);
+    tr_body_list(style, out, pos_cnt, basic->pos, NULL, negtable);
+    tr_body_list(style, out, neg_cnt, basic->neg, NULL, table);
     fprintf(out, "\n");
 
   }
@@ -294,10 +331,10 @@ void tr_constraint_as_atomic(int style, FILE *out,
     write_atom(style, out, head, table);
     if(pos_cnt || neg_cnt)
       fprintf(out, " :- {");
-    tr_atom_list(style, out, pos_cnt, constraint->pos, NULL, negtable);
+    tr_body_list(style, out, pos_cnt, constraint->pos, NULL, negtable);
     if(pos_cnt && neg_cnt)
       fprintf(out, ", ");
-    tr_atom_list(style, out, neg_cnt, constraint->neg, NULL, table);
+    tr_body_list(style, out, neg_cnt, constraint->neg, NULL, table);
     if(pos_cnt || neg_cnt)
       fprintf(out, "}");
     fprintf(out, ".\n");
@@ -306,8 +343,8 @@ void tr_constraint_as_atomic(int style, FILE *out,
 
     fprintf(out, "1 %i", head);
     fprintf(out, " %i %i", pos_cnt+neg_cnt, pos_cnt+neg_cnt);
-    tr_atom_list(style, out, pos_cnt, constraint->pos, NULL, negtable);
-    tr_atom_list(style, out, neg_cnt, constraint->neg, NULL, table);
+    tr_body_list(style, out, pos_cnt, constraint->pos, NULL, negtable);
+    tr_body_list(style, out, neg_cnt, constraint->neg, NULL, table);
     fprintf(out, "\n");
 
   }
@@ -330,19 +367,19 @@ void tr_choice_as_atomic(int style, FILE *out,
     fprintf(out, "}");
     if(pos_cnt || neg_cnt)
       fprintf(out, " :- ");
-    tr_atom_list(style, out, pos_cnt, choice->pos, NULL, negtable);
+    tr_body_list(style, out, pos_cnt, choice->pos, NULL, negtable);
     if(pos_cnt && neg_cnt)
       fprintf(out, ", ");
-    tr_atom_list(style, out, neg_cnt, choice->neg, NULL, table);
+    tr_body_list(style, out, neg_cnt, choice->neg, NULL, table);
     fprintf(out, ".\n");
 
   } else if(style == STYLE_SMODELS) {
 
     fprintf(out, "3 %i", head_cnt);
-    tr_atom_list(style, out, head_cnt, choice->head, NULL, table);
+    tr_head_list(style, out, head_cnt, choice->head, NULL, table);
     fprintf(out, " %i %i", pos_cnt+neg_cnt, pos_cnt+neg_cnt);
-    tr_atom_list(style, out, pos_cnt, choice->pos, NULL, negtable);
-    tr_atom_list(style, out, neg_cnt, choice->neg, NULL, table);
+    tr_body_list(style, out, pos_cnt, choice->pos, NULL, negtable);
+    tr_body_list(style, out, neg_cnt, choice->neg, NULL, table);
     fprintf(out, "\n");
 
   }
@@ -363,11 +400,11 @@ void tr_weight_as_atomic(int style, FILE *out,
 
     write_atom(style, out, head, table);
     fprintf(out, " :- %i [", bound);
-    tr_atom_list(style, out, pos_cnt, weight->pos,
+    tr_body_list(style, out, pos_cnt, weight->pos,
 		 &(weight->weight)[neg_cnt], negtable);
     if(pos_cnt && neg_cnt)
       fprintf(out, ", ");
-    tr_atom_list(style, out, neg_cnt, weight->neg, weight->weight, table);
+    tr_body_list(style, out, neg_cnt, weight->neg, weight->weight, table);
     fprintf(out, "]");
     fprintf(out, ".\n");
 
@@ -376,12 +413,45 @@ void tr_weight_as_atomic(int style, FILE *out,
 
     fprintf(out, "5 %i %i", head, bound);
     fprintf(out, " %i %i", pos_cnt+neg_cnt, pos_cnt+neg_cnt);
-    tr_atom_list(style, out, pos_cnt, weight->pos, NULL, negtable);
-    tr_atom_list(style, out, neg_cnt, weight->neg, NULL, table);
+    tr_body_list(style, out, pos_cnt, weight->pos, NULL, negtable);
+    tr_body_list(style, out, neg_cnt, weight->neg, NULL, table);
     for(i=0; i<pos_cnt; i++)
       fprintf(out, " %i", (weight->weight)[neg_cnt+i]);
     for(i=0; i<neg_cnt; i++)
       fprintf(out, " %i", (weight->weight)[i]);
+    fprintf(out, "\n");
+
+  }
+
+  return;
+}
+
+void tr_disjunctive_as_atomic(int style, FILE *out,
+			      DISJUNCTIVE_RULE *disjunctive,
+			      ATAB *table, ATAB *negtable)
+{
+  int head_cnt = disjunctive->head_cnt;
+  int pos_cnt = disjunctive->pos_cnt;
+  int neg_cnt = disjunctive->neg_cnt;
+  
+  if(style == STYLE_READABLE) {
+
+    tr_head_list(style, out, head_cnt, disjunctive->head, NULL, table);
+    if(pos_cnt || neg_cnt)
+      fprintf(out, " :- ");
+    tr_body_list(style, out, pos_cnt, disjunctive->pos, NULL, negtable);
+    if(pos_cnt && neg_cnt)
+      fprintf(out, ", ");
+    tr_body_list(style, out, neg_cnt, disjunctive->neg, NULL, table);
+    fprintf(out, ".\n");
+
+  } else if(style == STYLE_SMODELS) {
+
+    fprintf(out, "8 %i", head_cnt);
+    tr_head_list(style, out, head_cnt, disjunctive->head, NULL, table);
+    fprintf(out, " %i %i", pos_cnt+neg_cnt, pos_cnt+neg_cnt);
+    tr_body_list(style, out, pos_cnt, disjunctive->pos, NULL, negtable);
+    tr_body_list(style, out, neg_cnt, disjunctive->neg, NULL, table);
     fprintf(out, "\n");
 
   }
@@ -415,12 +485,18 @@ void tr_rules(int style, FILE *out, RULE *rule, ATAB *table, ATAB* negtable)
     case TYPE_WEIGHT:
       tr_weight_as_atomic(style, out, rule->data.weight,
 			  table, negtable);
+      break;
 
     case TYPE_INTEGRITY:
     case TYPE_OPTIMIZE:
       /* These are headless, hence no concern */
       break;
 
+    case TYPE_DISJUNCTIVE:
+      tr_disjunctive_as_atomic(style, out, rule->data.disjunctive,
+			       table, negtable);
+      break;
+      
     default:
       fprintf(stderr, "%s: unsupported rule type %i\n",
 	      program_name, rule->type);
@@ -446,12 +522,13 @@ void tr_atoms(int style, FILE *out, ATAB *table, ATAB *negtable)
     int count = passby->count;
     int offset = passby->offset;
     int i = 0;
-
+    int *statuses = passby->statuses;
+    
     for(i=1; i<=count; i++) {
       int atom = i+offset;
 
-      define_complement(style, out, atom, table, negtable);
-
+      if(statuses[i] & MARK_POSOCC)
+	define_complement(style, out, atom, table, negtable);
     }
     passby = passby->next;
   }
