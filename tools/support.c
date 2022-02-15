@@ -42,8 +42,8 @@ void _version_support_c()
 {
   fprintf(stderr, "%s: version information:\n", program_name);
   _version("$RCSfile: support.c,v $",
-	   "$Date: 2022/02/15 16:07:38 $",
-	   "$Revision: 1.9 $");
+	   "$Date: 2022/02/15 21:59:52 $",
+	   "$Revision: 1.10 $");
   _version_atom_c();
   _version_rule_c();
   _version_input_c();
@@ -308,6 +308,7 @@ void tr_basic_as_atomic(int style, FILE *out,
   } else if(style == STYLE_SMODELS) {
 
     fprintf(out, "1 %i", head);
+    /* Only negative literals in the body: */
     fprintf(out, " %i %i", pos_cnt+neg_cnt, pos_cnt+neg_cnt);
     tr_body_list(style, out, pos_cnt, basic->pos, NULL, negtable);
     tr_body_list(style, out, neg_cnt, basic->neg, NULL, table);
@@ -323,6 +324,7 @@ void tr_constraint_as_atomic(int style, FILE *out,
 			     ATAB *table, ATAB *negtable)
 {
   int head = constraint->head;
+  int bound = constraint->bound;
   int pos_cnt = constraint->pos_cnt;
   int neg_cnt = constraint->neg_cnt;
 
@@ -330,7 +332,7 @@ void tr_constraint_as_atomic(int style, FILE *out,
 
     write_atom(style, out, head, table);
     if(pos_cnt || neg_cnt)
-      fprintf(out, " :- {");
+      fprintf(out, " :- %i {", bound);
     tr_body_list(style, out, pos_cnt, constraint->pos, NULL, negtable);
     if(pos_cnt && neg_cnt)
       fprintf(out, ", ");
@@ -341,8 +343,9 @@ void tr_constraint_as_atomic(int style, FILE *out,
 
   } else if(style == STYLE_SMODELS) {
 
-    fprintf(out, "1 %i", head);
-    fprintf(out, " %i %i", pos_cnt+neg_cnt, pos_cnt+neg_cnt);
+    fprintf(out, "2 %i", head);
+    /* Only negative literals in the body: */
+    fprintf(out, " %i %i %i", pos_cnt+neg_cnt, pos_cnt+neg_cnt, bound);
     tr_body_list(style, out, pos_cnt, constraint->pos, NULL, negtable);
     tr_body_list(style, out, neg_cnt, constraint->neg, NULL, table);
     fprintf(out, "\n");
@@ -377,6 +380,7 @@ void tr_choice_as_atomic(int style, FILE *out,
 
     fprintf(out, "3 %i", head_cnt);
     tr_head_list(style, out, head_cnt, choice->head, NULL, table);
+    /* Only negative literals in the body: */
     fprintf(out, " %i %i", pos_cnt+neg_cnt, pos_cnt+neg_cnt);
     tr_body_list(style, out, pos_cnt, choice->pos, NULL, negtable);
     tr_body_list(style, out, neg_cnt, choice->neg, NULL, table);
@@ -411,8 +415,9 @@ void tr_weight_as_atomic(int style, FILE *out,
   } else if(style == STYLE_SMODELS) {
     int i = 0;
 
-    fprintf(out, "5 %i %i", head, bound);
-    fprintf(out, " %i %i", pos_cnt+neg_cnt, pos_cnt+neg_cnt);
+    fprintf(out, "5 %i", head);
+    /* Only negative literals in the body: */
+    fprintf(out, " %i %i %i", bound, pos_cnt+neg_cnt, pos_cnt+neg_cnt);
     tr_body_list(style, out, pos_cnt, weight->pos, NULL, negtable);
     tr_body_list(style, out, neg_cnt, weight->neg, NULL, table);
     for(i=0; i<pos_cnt; i++)
