@@ -39,8 +39,8 @@ lp2sat:		$(ACYC) $(SCC) lp2sat.o
 lpreify:	$(PRIM) $(SCC) lpreify.o
 		$(CC) $(PRIM) $(SCC) lpreify.o -o lpreify $(LDFLAGS)
 
-support:	$(CTR) $(SCC) support.o
-		$(CC) $(CTR) $(SCC) support.o -o support $(LDFLAGS)
+support:	support.o
+		$(CC) support.o -o support $(LDFLAGS)
 
 unsat2lp:	unsat2lp.o
 		$(CC) unsat2lp.o -o unsat2lp $(LDFLAGS)
