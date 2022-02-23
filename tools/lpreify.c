@@ -20,7 +20,7 @@
 /*
  * LPREIFY -- Print a ground logic program as a set of facts
  *
- * (c) 2014 Tomi Janhunen
+ * (c) 2014, 2022 Tomi Janhunen
  *
  * Main program and routines for rule level reification
  */
@@ -42,8 +42,8 @@ void _version_lpreify_c()
 {
   fprintf(stderr, "%s: version information:\n", program_name);
   _version("$RCSfile: lpreify.c,v $",
-	   "$Date: 2021/05/27 11:35:36 $",
-	   "$Revision: 1.6 $");
+	   "$Date: 2022/02/23 21:58:12 $",
+	   "$Revision: 1.7 $");
   _version_atom_c();
   _version_rule_c();
   _version_input_c();
@@ -183,7 +183,8 @@ int main(int argc, char **argv)
   if(option_symbols)
     reify_symbol_table(out, table);
   if(!option_dimacs)
-    reify_compute_statement(out, option_symbols, table, MARK_TRUE|MARK_FALSE);
+    reify_compute_statement(out, option_symbols, table,
+			    MARK_TRUE|MARK_FALSE|MARK_INPUT);
 
   exit(0);
 }
@@ -536,7 +537,20 @@ void reify_compute_statement(FILE *out, int symbols, ATAB *table, int mask)
 	  fputs(",false).\n", out);
 	}
       }
+	
+      if(status & MARK_INPUT) {
+	if(symbols)
+	  fprintf(out, "mark(%i,external).\n", atom);
+	else {
+	  fputs("mark(", out);
+	  if(!name && prefix)
+	    fputs(prefix, out);
+	  write_atom(STYLE_READABLE, out, atom, table);
+	  fputs(",external).\n", out);
+	}
+      }
     }
+
     table = table->next;
   }
   return;
