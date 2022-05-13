@@ -20,7 +20,7 @@
 /*
  * acyc.c -- Routines related with acyclicity constraints
  *
- * (c) 2014 Tomi Janhunen
+ * (c) 2014-2022 Tomi Janhunen
  */
 
 #include <stdlib.h>
@@ -40,8 +40,8 @@
 void _version_acyc_c()
 {
   _version("$RCSfile: acyc.c,v $",
-           "$Date: 2021/05/27 11:13:13 $",
-           "$Revision: 1.11 $");
+           "$Date: 2022/05/13 11:49:38 $",
+           "$Revision: 1.12 $");
 }
 
 int base2log(int n)
@@ -380,6 +380,7 @@ void tr_acyc_into_graph(int style, FILE *out, GRAPH *graphs)
   switch(style) {
   case STYLE_DIMACS:
     fprintf(out, "c endgraph\n");
+    fprintf(out, "c acyc\n");
     break;
   case STYLE_PB:
     fprintf(out, "* endgraph\n");
