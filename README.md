@@ -12,8 +12,5 @@ Compilation instructions (please check paths in the Makefile first):
 $ cd translators
 $ make
 $ make install
-$ cd tools
-$ make
-$ make install
 ```
 
