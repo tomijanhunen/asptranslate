@@ -1,6 +1,6 @@
 # Translation-Based ASP Tools under ASPTOOLS
 
-TOOLS=		acyc2solver lp2acyc lp2normal lp2normal2 lp2sat \
+TOOLS=		acyc2solver graph2sat lp2acyc lp2normal lp2normal2 lp2sat \
 		lpreify support unsat2lp
 ACYC=		acyc.o
 CTR=		counter.o
@@ -23,6 +23,9 @@ all: 		$(TOOLS)
 
 acyc2solver:	$(ACYC) $(SCC) acyc2solver.o
 		$(CC) $(ACYC) $(SCC) acyc2solver.o -o acyc2solver $(LDFLAGS)
+
+graph2sat:	graph2sat.o
+		$(CC) graph2sat.o -o graph2sat $(LDFLAGS)
 
 lp2acyc:	$(ACYC) $(SCC) lp2acyc.o
 		$(CC) $(ACYC) $(SCC) lp2acyc.o -o lp2acyc $(LDFLAGS)
