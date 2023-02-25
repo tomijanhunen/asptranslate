@@ -1,6 +1,6 @@
 /* asptranslate -- Translation-Based ASP under ASPTOOLS
 
-   Copyright (C) 2022 Tomi Janhunen
+   Copyright (C) 2023 Tomi Janhunen
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -18,9 +18,9 @@
 */
 
 /*
- * LP2ACYC -- Capture stable models of a normal program via acyclicity
+ * LP2ACYC -- Capture stable models of a logic program via acyclicity
  *
- * (c) 2014-2015 Tomi Janhunen
+ * (c) 2014-2015, 2023 Tomi Janhunen
  *
  * Main program and routines for rule level translation
  */
@@ -42,8 +42,8 @@ void _version_lp2acyc_c()
 {
   fprintf(stderr, "%s: version information:\n", program_name);
   _version("$RCSfile: lp2acyc.c,v $",
-	   "$Date: 2021/05/27 11:17:49 $",
-	   "$Revision: 1.30 $");
+	   "$Date: 2023/02/25 13:54:06 $",
+	   "$Revision: 1.31 $");
   _version_atom_c();
   _version_rule_c();
   _version_input_c();
@@ -65,6 +65,7 @@ void usage()
   fprintf(stderr, "   -d -- drop optimization statements\n");
   fprintf(stderr, "   -x -- ignore atoms in bodyless choices in scc check\n");
   fprintf(stderr, "   -p<prefix> -- set prefix for invisible atoms\n");
+  fprintf(stderr, "   --aspif -- produce output in the clingo format\n");
   fprintf(stderr, "\n");
 
   return;
@@ -73,6 +74,7 @@ void usage()
 #define RESERVE_ATOMS(variable,count) variable; variable+=count
 
 int size = 0; /* The size of the symbol table */
+
 AQUEUE *new_symbols = NULL;
 void write_new_symbols(int style, FILE *out);
 char *prefix = "_";
@@ -125,6 +127,7 @@ int main(int argc, char **argv)
   int option_dropt = 0;
   int option_weak = 0;
   int option_prefix = 0;
+  int option_aspif = 0;
 
   char *arg = NULL;
   int which = 0;
@@ -153,6 +156,8 @@ int main(int argc, char **argv)
       option_weak = -1;
     else if(strcmp(arg, "-d") == 0)
       option_dropt = -1;
+    else if(strcmp(arg, "--aspif") == 0)
+      option_aspif = -1;
     else if (strcmp(arg, "-x") == 0)
       scc_set(SCC_SKIP_CHOICE);				
     else if(strncmp(arg, "-p", 2) == 0) {
@@ -200,6 +205,8 @@ int main(int argc, char **argv)
   if(table_size(table) == 0) {
     if(option_verbose)
       fprintf(out, "%% %s contains no atoms, hence no output!\n", file);
+    else if(option_aspif)
+      fprintf(out, "asp 1 0 0\n0\n");
     else
       fprintf(out, "0\n0\nB+\n0\nB-\n0\nE\n0\n1\n");
     exit(0);
@@ -415,6 +422,19 @@ int main(int argc, char **argv)
 
       write_input(STYLE_READABLE, out, table);
 
+    } else if(option_aspif) {
+
+      fprintf(out, "asp 1 0 0\n");
+      write_program(STYLE_ASPIF, out, program, table);
+      if(statements && !option_dropt)
+	write_program(STYLE_ASPIF, out, statements, table);
+
+      write_symbols(STYLE_ASPIF, out, table);
+      write_compute_statement(STYLE_ASPIF, out, table,
+			      MARK_TRUE|MARK_FALSE|MARK_INPUT);
+
+      fprintf(out, "0\n");
+
     } else {
 
       write_program(STYLE_SMODELS, out, program, table);
@@ -438,8 +458,8 @@ int main(int argc, char **argv)
       fprintf(out, "0\n");
 
       fprintf(out, "%i\n", number);
-    }
 
+    }
     exit(0);
   }
   /* Check head occurrences */
@@ -477,7 +497,7 @@ int main(int argc, char **argv)
       fputs("\n", out);
     }
     if(graph) {
-      tr_acyc_symbols(STYLE_READABLE, out, graph);
+      tr_acyc_symbols(STYLE_READABLE, out, graph, 0);
       fputs("\n", out);
     }
 
@@ -493,7 +513,30 @@ int main(int argc, char **argv)
 
     write_input(STYLE_READABLE, out, table);
 
-  } else { /* !option_verbose: use internal format */
+  } else if(option_aspif) {
+
+    fprintf(out, "asp 1 0 0\n");
+    tr_atoms(STYLE_ASPIF, out, table, occtable,
+	     option_weak, &contradiction, newatom);
+    if(statements && !option_dropt)
+      write_program(STYLE_ASPIF, out, statements, table);
+    if(graph)
+      tr_acyc_choices(STYLE_ASPIF, out, graph, table);
+
+    write_symbols(STYLE_ASPIF, out, table);
+    if(option_symbols)
+      write_new_symbols(STYLE_ASPIF, out);
+    if(graph)
+      tr_acyc_symbols(STYLE_ASPIF, out, graph, option_symbols);
+
+    write_compute_statement(STYLE_ASPIF, out, table,
+			    MARK_TRUE|MARK_FALSE|MARK_INPUT);
+    if(contradiction>0)
+      fprintf(out, "6 1 -%i\n", contradiction);
+
+    fprintf(out, "0\n");
+
+  } else { /* Use internal smodels format */
 
     tr_atoms(STYLE_SMODELS, out, table, occtable,
 	     option_weak, &contradiction, newatom);
@@ -507,7 +550,7 @@ int main(int argc, char **argv)
     if(option_symbols)
       write_new_symbols(STYLE_SMODELS, out);
     if(graph)
-      tr_acyc_symbols(STYLE_SMODELS, out, graph);
+      tr_acyc_symbols(STYLE_SMODELS, out, graph, 0);
     fprintf(out, "0\n");
 
     fprintf(out, "B+\n");
@@ -542,6 +585,8 @@ void write_atom_if_possible(int style, FILE *out, int atom, ATAB *table)
       fprintf(out, "%s%i", prefix, atom);
     else if(style == STYLE_SMODELS)
       fprintf(out, " %i", atom);
+    else if(style == STYLE_ASPIF)
+      fprintf(out, "%i", atom); /* Must handle minus outside */
   }
   return;
 }
@@ -553,6 +598,8 @@ void write_atom_if_possible(int style, FILE *out, int atom, ATAB *table)
 void write_new_symbols(int style, FILE *out)
 {
   QELEM *q = new_symbols->first;
+  int len = 0;
+  int atom = 0;
 
   while(q) {
     switch(style) {
@@ -562,8 +609,15 @@ void write_new_symbols(int style, FILE *out)
     case STYLE_SMODELS:
       fprintf(out, "%i ", q->elem.atom);
       break;
+    case STYLE_ASPIF:
+      atom = q->elem.atom;
+      len = qelen(q->next);
+      fprintf(out, "4 %i ", len);
+      break;
     }
     q = print_elem(out, q->next);
+    if(style == STYLE_ASPIF)
+      fprintf(out, " 1 %i", atom);
     fprintf(out, "\n");
   }
 
@@ -718,20 +772,20 @@ RULE *copyinsert_basic(int head,
 
   basic->neg = table;
   if(extra_neg) {
-    if(neg_cnt>1)
-    memcpy(table, neg, (neg_cnt-1)*sizeof(int));
+    if(neg_cnt>1 && neg)
+      memcpy(table, neg, (neg_cnt-1)*sizeof(int));
     table[neg_cnt-1] = extra_neg;
-  } else
+  } else if(neg)
     memcpy(table, neg, neg_cnt*sizeof(int));
 
   /* Copy positive body conditions */
 
   basic->pos = &table[neg_cnt];
   if(extra_pos) {
-    if(pos_cnt>1)
+    if(pos_cnt>1 && pos)
       memcpy(basic->pos, pos, (pos_cnt-1)*sizeof(int));
     table[neg_cnt+pos_cnt-1] = extra_pos;
-  } else
+  } else if(pos)
     memcpy(basic->pos, pos, pos_cnt*sizeof(int));
 
   return rule;
@@ -774,20 +828,20 @@ RULE *copyinsert_choice(int head, /* Only one head atom allowed */
 
   choice->neg = table;
   if(extra_neg) {
-    if(neg_cnt>1)
-    memcpy(table, neg, (neg_cnt-1)*sizeof(int));
+    if(neg_cnt>1 && neg)
+      memcpy(table, neg, (neg_cnt-1)*sizeof(int));
     table[neg_cnt-1] = extra_neg;
-  } else
+  } else if(neg)
     memcpy(table, neg, neg_cnt*sizeof(int));
 
   /* Copy positive body conditions */
 
   choice->pos = &table[neg_cnt];
   if(extra_pos) {
-    if(pos_cnt>1)
+    if(pos_cnt>1 && pos)
       memcpy(choice->pos, pos, (pos_cnt-1)*sizeof(int));
     table[neg_cnt+pos_cnt-1] = extra_pos;
-  } else
+  } else if(pos)
     memcpy(choice->pos, pos, pos_cnt*sizeof(int));
 
   return rule;
@@ -958,7 +1012,6 @@ int cmp_atoms_asc(const void *a, const void *b)
   const WATOM *wa2 = (const WATOM *)b;
   return wa1->atom - wa2->atom; 
 } 
-
 
 /*
  * sort_weighted_atoms -- Sort atoms by their weights or numbers
@@ -1323,7 +1376,9 @@ void tr_pos_list(int style, FILE *out, int cnt, int *pos, ATAB *table)
 {
   int i = 0;
 
-  for(i = 0 ; i < cnt; ) {
+  for(i = 0 ; i < cnt; /* Inc below */ ) {
+    if(style == STYLE_ASPIF)
+      fputs(" ", out);
     write_atom_if_possible(style, out, pos[i], table);
     i++;
     if(style == STYLE_READABLE && i<cnt)
@@ -1337,9 +1392,11 @@ void tr_neg_list(int style, FILE *out, int cnt, int *neg, ATAB *table)
 {
   int i = 0;
 
-  for(i = 0 ; i < cnt; ) {
+  for(i = 0 ; i < cnt; /* Inc below */ ) {
     if(style == STYLE_READABLE)
       fputs("not ", out);
+    else if(style == STYLE_ASPIF)
+      fputs(" -", out);
     write_atom_if_possible(style, out, neg[i], table);
     i++;
     if(style == STYLE_READABLE && i<cnt)
@@ -1359,18 +1416,30 @@ void tr_literal_list(int style, FILE *out, char *separator,
   for(i=0; i<neg_cnt; i++) {
     if(style == STYLE_READABLE)
       fprintf(out, "not ");
+    else if(style == STYLE_ASPIF)
+      fprintf(out, " -");
     write_atom_if_possible(style, out, neg[i], table);
-    if(weight && (style == STYLE_READABLE))
-      fprintf(out, "=%i", weight[j++]);
+    if(weight) { 
+      if(style == STYLE_READABLE)
+	fprintf(out, "=%i", weight[j++]);
+      else if(style == STYLE_ASPIF)
+	fprintf(out, " %i", weight[j++]);
+    }
     if(style == STYLE_READABLE)
       if(i<neg_cnt-1 || pos_cnt)
 	fprintf(out, "%s", separator);
   }
 
   for(i=0; i<pos_cnt; i++) {
+    if(style == STYLE_ASPIF)
+      fputs(" ", out);
     write_atom_if_possible(style, out, pos[i], table);
-    if(weight && (style == STYLE_READABLE))
-      fprintf(out, "=%i", weight[j++]);
+    if(weight) {
+      if(style == STYLE_READABLE)
+	fprintf(out, "=%i", weight[j++]);
+      else if(style == STYLE_ASPIF)
+	fprintf(out, " %i", weight[j++]);
+    }
     if(style == STYLE_READABLE && i<pos_cnt-1)
        fprintf(out, "%s", separator);
   }
@@ -1388,6 +1457,8 @@ void compress_literal_list(int style, FILE *out, char *separator,
   int i = 0;
 
   for(i=0; i<scc_pos_cnt; i++) {
+    if(style == STYLE_ASPIF)
+      fputs(" ", out);
     write_atom_if_possible(style, out, scc_pos[i], table);
     if(style == STYLE_READABLE && i<scc_pos_cnt-1)
        fprintf(out, "%s", separator);
@@ -1407,7 +1478,9 @@ void external_literal_list(int style, FILE *out, char *separator,
 
   for(i=0; i<neg_cnt; i++) {
     if(style == STYLE_READABLE)
-      fprintf(out, "not ");
+      fputs("not ", out);
+    else if(style == STYLE_ASPIF)
+      fputs(" -", out);
     write_atom_if_possible(style, out, neg[i], table);
     if(style == STYLE_READABLE)
       if(i<neg_cnt-1 || pos_cnt-scc_pos_cnt>0)
@@ -1422,6 +1495,8 @@ void external_literal_list(int style, FILE *out, char *separator,
     if(atom == scc_pos[j])
       j++;
     else {
+      if(style == STYLE_ASPIF)
+	fputs(" ", out);
       write_atom_if_possible(style, out, atom, table);
       if(style == STYLE_READABLE && i-j<pos_cnt-scc_pos_cnt-1)
 	fprintf(out, "%s", separator);
@@ -1464,10 +1539,21 @@ void compress_rule(int style, FILE *out,
       fprintf(out, "1");
     write_atom_if_possible(style, out, atom, table);
 
+  } else if(style == STYLE_ASPIF) {
+
+    if(rule->type == TYPE_CHOICE)
+      fputs("1 1 1", out);
+    else
+      fputs("1 0 1", out);
+    fputs(" ", out);
+    write_atom_if_possible(style, out, atom, table);
+
   }
 
   if(style == STYLE_SMODELS)
     fprintf(out, " %i %i", scc_pos_cnt+1, 0);
+  else if(style == STYLE_ASPIF)
+    fprintf(out, " 0 %i", scc_pos_cnt+1);
 
   if(style == STYLE_READABLE) {
     fprintf(out, "_eb_%i_", index);
@@ -1475,14 +1561,14 @@ void compress_rule(int style, FILE *out,
     fputs(", ", out);
   }
 
-  if(pos_cnt || neg_cnt) {
-
+  if(pos_cnt || neg_cnt)
     compress_literal_list(style, out,
 			  style == STYLE_READABLE ? ", ": " ",
 			  scc_pos_cnt, scc_pos, table);
-  }
 
   if(style == STYLE_SMODELS)
+    fprintf(out, " %i", ext_body);
+  else if(style == STYLE_ASPIF)
     fprintf(out, " %i", ext_body);
 
   if(style == STYLE_READABLE)
@@ -1498,10 +1584,9 @@ void compress_rule(int style, FILE *out,
     fprintf(out, " :- ");
 
   } else if(style == STYLE_SMODELS)
-    fprintf(out, "1 %i", ext_body);
-
-  if(style == STYLE_SMODELS)
-    fprintf(out, " %i %i", pos_cnt-scc_pos_cnt+neg_cnt, neg_cnt);
+    fprintf(out, "1 %i %i %i", ext_body, pos_cnt-scc_pos_cnt+neg_cnt, neg_cnt);
+  else if(style == STYLE_ASPIF)
+    fprintf(out, "1 0 1 %i 0 %i", ext_body, pos_cnt-scc_pos_cnt+neg_cnt);
 
   external_literal_list(style, out,
 			style == STYLE_READABLE ? ", ": " ",
@@ -1529,6 +1614,7 @@ int tr_wellsupp(int style, FILE *out, int atom, RULE *rule,
   int neg_cnt = get_neg_cnt(rule);
   int *neg = get_neg(rule);
   int i = 0, j = 0;
+  int type = rule->type;
 
   if(new_symbols) {
     qdef(well_support, new_symbols);
@@ -1541,7 +1627,7 @@ int tr_wellsupp(int style, FILE *out, int atom, RULE *rule,
   if(style == STYLE_READABLE)
     fprintf(out, "\n%% Well-support:\n\n");
 
-  switch(rule->type) {
+  switch(type) {
   case TYPE_BASIC:
   case TYPE_CHOICE:
 
@@ -1564,7 +1650,7 @@ int tr_wellsupp(int style, FILE *out, int atom, RULE *rule,
       } else if(pos_cnt+neg_cnt>0)
 	fprintf(out, " :- ");
 
-    } else {
+    } else if(style == STYLE_SMODELS) {
 
       fprintf(out, "1 %i", well_support);
       if(body_ext)
@@ -1573,6 +1659,17 @@ int tr_wellsupp(int style, FILE *out, int atom, RULE *rule,
 	fprintf(out, " %i %i", pos_cnt+neg_cnt, neg_cnt);
 	/* Negative body */
 	tr_literal_list(style, out, " ", 0, NULL, neg_cnt, neg, NULL, table);
+      }
+
+    } else if(style == STYLE_ASPIF) {
+
+      fprintf(out, "1 0 1 %i", well_support);
+      if(body_ext)
+	fprintf(out, " 0 %i %i", scc_pos_cnt+1, body_ext /* Positive */);
+      else {
+	fprintf(out, " 0 %i", pos_cnt+neg_cnt);
+	/* Negative body */
+	tr_literal_list(style, out, NULL, 0, NULL, neg_cnt, neg, NULL, table);
       }
     }
 
@@ -1587,6 +1684,10 @@ int tr_wellsupp(int style, FILE *out, int atom, RULE *rule,
 	    fprintf(out, "_acyc_%i_%i_%i", scc, atom, atom2);
 	  else if(style == STYLE_SMODELS)
 	    write_atom_if_possible(style, out, acyc, NULL); /* Positive */
+	  else if(style == STYLE_ASPIF) {
+	    fputs(" ", out);
+	    write_atom_if_possible(style, out, acyc, NULL); /* Positive */
+	  }
 	  if(body_ext) {
 	    if(style == STYLE_READABLE && j<scc_pos_cnt-1)
 	      fputs(", ", out);
@@ -1596,6 +1697,8 @@ int tr_wellsupp(int style, FILE *out, int atom, RULE *rule,
 	  }
 	  j++;
 	} else if(!body_ext) {
+	  if(style == STYLE_ASPIF)
+	    fputs(" ", out);
 	  write_atom_if_possible(style, out, atom2, table);
 
 	  if(style == STYLE_READABLE && i<pos_cnt-1)
@@ -1622,7 +1725,7 @@ int tr_wellsupp(int style, FILE *out, int atom, RULE *rule,
   case TYPE_CONSTRAINT:
     { int *weight = NULL, bound = 0;
 
-      if(rule->type == TYPE_WEIGHT) {
+      if(type == TYPE_WEIGHT) {
 	weight = rule->data.weight->weight;
 	bound = rule->data.weight->bound;
       } else
@@ -1631,15 +1734,18 @@ int tr_wellsupp(int style, FILE *out, int atom, RULE *rule,
       /* Produce modified constraint/weight rule */
 
       if(style == STYLE_READABLE) {
+
 	fprintf(out, "_ws_%i_", index);
 	write_atom_if_possible(style, out, atom, table);
 	fprintf(out, " :- %i ", bound);
-	if(rule->type == TYPE_WEIGHT)
+	if(type == TYPE_WEIGHT)
 	  fputs("[", out);
 	else
 	  fputs("{", out);
-      } else {
-	if(rule->type == TYPE_WEIGHT) {
+
+      } else if(style == STYLE_SMODELS) {
+
+	if(type == TYPE_WEIGHT) {
 	  fprintf(out, "5");
 	  write_atom_if_possible(style, out, well_support, NULL);
 	  fprintf(out, " %i %i %i", bound, pos_cnt+neg_cnt, neg_cnt);
@@ -1650,6 +1756,23 @@ int tr_wellsupp(int style, FILE *out, int atom, RULE *rule,
 	}
 	/* Negative body */
 	tr_literal_list(style, out, " ", 0, NULL, neg_cnt, neg, NULL, table);
+
+      } else if(style == STYLE_ASPIF) {
+
+	fprintf(out, "1 0 1 ");
+	write_atom_if_possible(style, out, well_support, NULL);
+	fprintf(out, " 1 %i %i", bound, pos_cnt+neg_cnt);
+
+	if(type == TYPE_WEIGHT)
+	  tr_literal_list(style, out, NULL, 0, NULL,
+			  neg_cnt, neg, weight, table);
+	else { /* CONSTRAIT_RULE with 1s as weights */
+	  for(i=0; i<neg_cnt; i++) {
+	    fputs(" -", out);
+	    write_atom_if_possible(style, out, neg[i], table);
+	    fputs(" 1", out);
+	  }
+	}
       }
 
       /* Positive body */
@@ -1663,13 +1786,32 @@ int tr_wellsupp(int style, FILE *out, int atom, RULE *rule,
 	    fprintf(out, "_acyc_%i_%i_%i", scc, atom, atom2);
 	  else if(style == STYLE_SMODELS)
 	    write_atom_if_possible(style, out, acyc, NULL); /* Positive */
+	  else if(style == STYLE_ASPIF) {
+	    fputs(" ", out);
+	    write_atom_if_possible(style, out, acyc, NULL); /* Positive */
+	    if(type == TYPE_WEIGHT)
+	      fprintf(out, " %i", weight[neg_cnt+i]);
+	    else
+	      fputs(" 1", out);
+	  }
 	  j++;
-	} else
+	} else {
+	  if(style == STYLE_ASPIF)
+	    fputs(" ", out);
 	  write_atom_if_possible(style, out, atom2, table);
-	if(rule->type == TYPE_WEIGHT && style == STYLE_READABLE)
-	  fprintf(out, "=%i", weight[neg_cnt+i]);
-	if(style == STYLE_READABLE && i<pos_cnt-1)
-	  fputs(", ", out);
+	  if(style == STYLE_ASPIF) {
+	    if(type == TYPE_WEIGHT)
+	      fprintf(out, " %i", weight[neg_cnt+i]);
+	    else
+	      fputs(" 1", out);
+	  }
+	}
+	if(style == STYLE_READABLE) {
+	  if(type == TYPE_WEIGHT)
+	    fprintf(out, "=%i", weight[neg_cnt+i]);
+	  if(i<pos_cnt-1)
+	    fputs(", ", out);
+	}
       }
 
       if(style == STYLE_READABLE) {
@@ -1677,17 +1819,17 @@ int tr_wellsupp(int style, FILE *out, int atom, RULE *rule,
 	  fputs(", ", out);
 	/* Negative body */
 	tr_literal_list(style, out, ", ", 0, NULL, neg_cnt, neg, weight, table);
-	if(rule->type == TYPE_WEIGHT)
-	  fprintf(out, "].\n");
+	if(type == TYPE_WEIGHT)
+	  fprintf(out, "].");
 	else
-	  fprintf(out, "}.\n");
+	  fprintf(out, "}.");
       } else if(style == STYLE_SMODELS) {
 	/* Optionally weights */
-	if(rule->type == TYPE_WEIGHT)
+	if(type == TYPE_WEIGHT)
 	  for(i=0; i<neg_cnt+pos_cnt; i++)
 	    fprintf(out, " %i", weight[i]);
-	fprintf(out, "\n");
       }
+      fputs("\n", out);
     }
     break;
   }
@@ -1704,6 +1846,7 @@ int tr_redcheck(int style, FILE *out, int atom, RULE *rule,
 		int index, int *contradiction,
                 NODE *graph, int newatom)
 {
+  int type = rule->type;
   int pos_cnt = get_pos_cnt(rule);
   int *pos = get_pos(rule);
   int neg_cnt = get_neg_cnt(rule);
@@ -1727,7 +1870,7 @@ int tr_redcheck(int style, FILE *out, int atom, RULE *rule,
   if(style == STYLE_READABLE)
     fprintf(out, "\n%% Reduncancy for well-support:\n\n");
 
-  switch(rule->type) {
+  switch(type) {
   case TYPE_WEIGHT:
   case TYPE_CONSTRAINT:
     { int *weight = NULL, bound = 0;
@@ -1735,7 +1878,7 @@ int tr_redcheck(int style, FILE *out, int atom, RULE *rule,
 
       if(scc_pos_cnt>0) skip=1; /* The first condition is to be skipped */
 
-      if(rule->type == TYPE_WEIGHT) {
+      if(type == TYPE_WEIGHT) {
 	weight = rule->data.weight->weight;
 	bound = rule->data.weight->bound;
       } else
@@ -1751,15 +1894,18 @@ int tr_redcheck(int style, FILE *out, int atom, RULE *rule,
       }
 
       if(style == STYLE_READABLE) {
+
 	fprintf(out, "_red_%i_", index);
 	write_atom_if_possible(style, out, atom, table);
 	fprintf(out, " :- %i ", bound);
-	if(rule->type == TYPE_WEIGHT)
+	if(type == TYPE_WEIGHT)
 	  fputs("[", out);
 	else
 	  fputs("{", out);
-      } else {
-	if(rule->type == TYPE_WEIGHT) {
+
+      } else if(style == STYLE_SMODELS) {
+
+	if(type == TYPE_WEIGHT) {
 	  fprintf(out, "5");
 	  write_atom_if_possible(style, out, redundancy, NULL);
 	  fprintf(out, " %i %i %i", bound, pos_cnt+neg_cnt-skip, neg_cnt);
@@ -1770,10 +1916,27 @@ int tr_redcheck(int style, FILE *out, int atom, RULE *rule,
 	}
 	/* Negative body */
 	tr_literal_list(style, out, " ", 0, NULL, neg_cnt, neg, NULL, table);
+
+      } else if(style == STYLE_ASPIF) {
+
+	fprintf(out, "1 0 1 ");
+	write_atom_if_possible(style, out, redundancy, NULL);
+	fprintf(out, " 1 %i %i", bound, pos_cnt+neg_cnt-skip);
+
+	if(type == TYPE_WEIGHT)
+	  tr_literal_list(style, out, NULL, 0, NULL,
+			  neg_cnt, neg, weight, table);
+	else { /* CONSTRAIT_RULE with 1s as weights */
+	  for(i=0; i<neg_cnt; i++) {
+	    fputs(" -", out);
+	    write_atom_if_possible(style, out, neg[i], table);
+	    fputs(" 1", out);
+	  }
+	}
       }
 
       /* Positive body */
-      
+
       for(i=0, j=0; i<pos_cnt; i++) {
 	int atom2 = pos[i];
 	int acyc = acyc_find_edge(graph, atom2);
@@ -1800,20 +1963,36 @@ int tr_redcheck(int style, FILE *out, int atom, RULE *rule,
 	    if(style == STYLE_READABLE) {
 	      fprintf(out, "_chk_%i_%i_", index, j);
 	      write_atom_if_possible(style, out, atom, table);
-	    } else if(style == STYLE_SMODELS)
+	    } else if(style == STYLE_SMODELS) {
 	      write_atom_if_possible(style, out,
 				     scc_chk[j], NULL); /* Positive */
-	    if(rule->type == TYPE_WEIGHT && style == STYLE_READABLE)
-	      fprintf(out, "=%i", weight[neg_cnt+i]);
-	    if(style == STYLE_READABLE && i<pos_cnt-skip-1)
-	      fputs(", ", out);
-	  } else skip=0;
+	    } else if(style == STYLE_ASPIF) {
+	      fputs(" ", out);
+	      write_atom_if_possible(style, out,
+				     scc_chk[j], NULL); /* Positive */
+	      if(type == TYPE_WEIGHT)
+		fprintf(out, " %i", weight[neg_cnt+i]);
+	      else
+		fputs(" 1", out);
+	    }
+	  } else /* j==0 */
+	    skip=0;
 	  j++;
-	} else { /* Print as is */
+	} else { /* atom2 != scc_pos[j] => Print as is */
+	  if(style == STYLE_ASPIF)
+	    fputs(" ", out);
 	  write_atom_if_possible(style, out, atom2, table);
-	  if(rule->type == TYPE_WEIGHT && style == STYLE_READABLE)
+	  if(style == STYLE_ASPIF) {
+	    if(type == TYPE_WEIGHT)
+	      fprintf(out, " %i", weight[neg_cnt+i]);
+	    else
+	      fputs(" 1", out);
+	  }
+	}
+	if(style == STYLE_READABLE) {
+	  if(type == TYPE_WEIGHT)
 	    fprintf(out, "=%i", weight[neg_cnt+i]);
-	  if(style == STYLE_READABLE && i<pos_cnt-skip-1)
+	  if(i<pos_cnt-skip-1)
 	    fputs(", ", out);
 	}
       }
@@ -1825,13 +2004,14 @@ int tr_redcheck(int style, FILE *out, int atom, RULE *rule,
 	  fputs(", ", out);
 	/* Negative body */
 	tr_literal_list(style, out, ", ", 0, NULL, neg_cnt, neg, weight, table);
-	if(rule->type == TYPE_WEIGHT)
-	  fprintf(out, "].\n");
+	if(type == TYPE_WEIGHT)
+	  fprintf(out, "].");
 	else
-	  fprintf(out, "}.\n");
+	  fprintf(out, "}.");
+
       } else if(style == STYLE_SMODELS) {
 	/* Optionally weights */
-	if(rule->type == TYPE_WEIGHT) {
+	if(type == TYPE_WEIGHT) {
 	  for(i=0; i<neg_cnt; i++)
 	    fprintf(out, " %i", weight[i]);
 	  for(i=0, j=0; i<pos_cnt; i++) {
@@ -1843,8 +2023,8 @@ int tr_redcheck(int style, FILE *out, int atom, RULE *rule,
 	      fprintf(out, " %i", weight[neg_cnt+i]);
 	  }
 	}
-	fprintf(out, "\n");
       }
+      fprintf(out, "\n");
 
       for(i=0, j=0; i<pos_cnt; i++) {
 	int atom2 = pos[i];
@@ -1877,17 +2057,27 @@ int tr_redcheck(int style, FILE *out, int atom, RULE *rule,
 	      fprintf(out, "_acyc_%i_%i_%i", scc, atom, scc_pos[j-1]);
 	      fputs(".\n", out);
 
-	    } else if(style == STYLE_SMODELS) {
+	    } else {
 	      int prevacyc = acyc_find_edge(graph, scc_pos[j-1]);
 
-	      fprintf(out, "1 %i 2 0 %i", scc_chk[j], scc_nxt[j]);
+	      if(style == STYLE_SMODELS)
+		fprintf(out, "1 %i 2 0 %i", scc_chk[j], scc_nxt[j]);
+	      else if(style == STYLE_ASPIF)
+		fprintf(out, "1 0 1 %i 0 2 %i ", scc_chk[j], scc_nxt[j]);
 	      write_atom_if_possible(style, out, acyc, NULL);
 	      fputs("\n", out);
 
-	      if(j-1>0)
-		fprintf(out, "1 %i 1 0 %i\n", scc_nxt[j], scc_nxt[j-1]);
+	      if(j-1>0) {
+		if(style == STYLE_SMODELS)
+		  fprintf(out, "1 %i 1 0 %i\n", scc_nxt[j], scc_nxt[j-1]);
+		else if(style == STYLE_ASPIF)
+		  fprintf(out, "1 0 1 %i 0 1 %i\n", scc_nxt[j], scc_nxt[j-1]);
+	      }
 
-	      fprintf(out, "1 %i 1 0", scc_nxt[j]);
+	      if(style == STYLE_SMODELS)
+		fprintf(out, "1 %i 1 0", scc_nxt[j]);
+	      else if(style == STYLE_ASPIF)
+		fprintf(out, "1 0 1 %i 0 1 ", scc_nxt[j]);
 	      write_atom_if_possible(style, out, prevacyc, NULL);
 	      fputs("\n", out);
 	    }
@@ -1902,10 +2092,15 @@ int tr_redcheck(int style, FILE *out, int atom, RULE *rule,
 	    write_atom_if_possible(style, out, atom, table);
 	    fputs(".\n", out);
 
-	  } else if(style == STYLE_SMODELS) {
+	  } else {
 
-	    fprintf(out, "1 %i 2 0", *contradiction);
+	    if(style == STYLE_SMODELS)
+	      fprintf(out, "1 %i 2 0", *contradiction);
+	    else if(style == STYLE_ASPIF)
+	      fprintf(out, "1 0 0 0 2 ");
 	    write_atom_if_possible(style, out, acyc, NULL);
+	    if(style == STYLE_ASPIF)
+	      fputs(" ", out);
 	    write_atom_if_possible(style, out, redundancy, NULL);
 	    fputs("\n", out);
 	    
@@ -1953,9 +2148,21 @@ void tr_must_support(int style, FILE *out, int atom, ATAB *table,
     fprintf(out, "1 %i %i %i",
 	    contradiction, supp_cnt+1, supp_cnt);
     for(i=0; i < supp_cnt; i++)
-      write_atom_if_possible(style, out, supp[i], NULL);
+      write_atom_if_possible(style, out, supp[i], NULL); /* Negative */
     write_atom_if_possible(style, out, atom, table); /* Positive */
     fputs("\n", out);
+
+  } else if(style == STYLE_ASPIF) {
+
+    fprintf(out, "1 0 0 0 %i", supp_cnt+1);
+    for(i=0; i < supp_cnt; i++) {
+      fputs(" -", out);
+      write_atom_if_possible(style, out, supp[i], NULL); /* Negative */
+    }
+    fputs(" ", out);
+    write_atom_if_possible(style, out, atom, table); /* Positive */
+    fputs("\n", out);
+
   }
 
   return;
@@ -1979,8 +2186,14 @@ void tr_false_atom(int style, FILE *out, int contradiction,
     write_atom_if_possible(style, out, atom3, NULL);  /* Positive */
     fputs("\n", out);
     break;
+  case STYLE_ASPIF:
+    fprintf(out, "1 0 0 0 2 -");
+    write_atom_if_possible(style, out, atom1, table); /* Negative */
+    fputs(" ", out);
+    write_atom_if_possible(style, out, atom3, NULL);  /* Positive */
+    fputs("\n", out);
+    break;
   }
-
 
   return;
 }
@@ -2001,6 +2214,14 @@ void tr_support(int style, FILE *out, int contradiction, int scc,
   case STYLE_SMODELS:
     fprintf(out, "1 %i 2 0", contradiction);
     write_atom_if_possible(style, out, atom4, NULL);
+    write_atom_if_possible(style, out, atom3, NULL);
+    fputs("\n", out);
+    break;
+  case STYLE_ASPIF:
+    fprintf(out, "1 0 0 0 2");
+    fputs(" ", out);
+    write_atom_if_possible(style, out, atom4, NULL);
+    fputs(" ", out);
     write_atom_if_possible(style, out, atom3, NULL);
     fputs("\n", out);
     break;
@@ -2109,6 +2330,7 @@ void tr_atoms(int style, FILE *out, ATAB *table, OCCTAB *occtable,
 	    } else if(r->type == TYPE_WEIGHT)
 	      wsum += (r->data.weight->weight)[neg_cnt+k];
 	  }
+	  if(l<pos_cnt) scc_pos[l] = 0; /* Crucial for tr_wellsupp when l=0 */
 
 	  if(scc_pos_cnt == 0 ||
 	     r->type == TYPE_CONSTRAINT ||

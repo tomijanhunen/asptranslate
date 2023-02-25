@@ -1,6 +1,6 @@
 /* asptranslate -- Translation-Based ASP under ASPTOOLS
 
-   Copyright (C) 2022 Tomi Janhunen
+   Copyright (C) 2023 Tomi Janhunen
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -20,7 +20,7 @@
 /*
  * acyc.c -- Routines related with acyclicity constraints
  *
- * (c) 2014-2022 Tomi Janhunen
+ * (c) 2014-2015, 2023 Tomi Janhunen
  */
 
 #include <stdlib.h>
@@ -40,8 +40,8 @@
 void _version_acyc_c()
 {
   _version("$RCSfile: acyc.c,v $",
-           "$Date: 2022/05/13 11:49:38 $",
-           "$Revision: 1.12 $");
+           "$Date: 2023/02/25 13:57:13 $",
+           "$Revision: 1.13 $");
 }
 
 int base2log(int n)
@@ -672,7 +672,7 @@ void tr_acyc_into_cnf(int style, int flavor, FILE *out,
  * tr_acyc_symbols -- Declare the atoms related with acyclicity check
  */
 
-void tr_acyc_symbols(int style, FILE *out, GRAPH *graph)
+void tr_acyc_symbols(int style, FILE *out, GRAPH *graph, int symbols)
 {
   GRAPH *sg = graph;
 
@@ -682,16 +682,27 @@ void tr_acyc_symbols(int style, FILE *out, GRAPH *graph)
     
     while(node) {
       EDGE *edge = node->edges;
+      int len = 0;
 
       while(edge) {
+	int from = node->node;
+	int to = edge->node;
+	int atom = edge->atom;
+
 	switch(style) {
 	case STYLE_READABLE:
-	  fprintf(out, "%% _%i = _acyc_%i_%i_%i\n",
-		  edge->atom, grid, node->node, edge->node);
+	  fprintf(out, "%% _%i = _acyc_%i_%i_%i\n", atom, grid, from, to);
 	  break;
 	case STYLE_SMODELS:
-	  fprintf(out, "%i _acyc_%i_%i_%i\n",
-		  edge->atom, grid, node->node, edge->node);
+	  fprintf(out, "%i _acyc_%i_%i_%i\n", atom, grid, from, to);
+	  break;
+	case STYLE_ASPIF:
+	  if(symbols) {
+	    len = log10i(grid)+log10i(from)+log10i(to)+8;
+	    fprintf(out, "4 %i _acyc_%i_%i_%i 1 %i\n",
+		    len, grid, from, to, atom);
+	  }
+	  fprintf(out, "8 %i %i 1 %i\n", from, to, atom);
 	  break;
 	}
 	edge = edge->next;
@@ -776,6 +787,9 @@ void tr_acyc_choices(int style, FILE *out,  GRAPH *graph, ATAB *table)
 	  break;
 	case STYLE_SMODELS:
 	  fprintf(out, "3 1 %i 1 0 %i\n", edge->atom, edge->node);
+	  break;
+	case STYLE_ASPIF:
+	  fprintf(out, "1 1 1 %i 0 1 %i\n", edge->atom, edge->node);
 	  break;
 	}
 

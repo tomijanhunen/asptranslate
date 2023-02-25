@@ -1,6 +1,6 @@
 /* asptranslate -- Translation-Based ASP under ASPTOOLS
 
-   Copyright (C) 2022 Tomi Janhunen
+   Copyright (C) 2023 Tomi Janhunen
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -20,12 +20,12 @@
 /*
  * Definitions related to acyclicity constraints
  *
- * (c) 2014-2015 Tomi Janhunen
+ * (c) 2014-2015, 2023 Tomi Janhunen
  */
 
 #define _ACYC_H_RCSFILE  "$RCSfile: acyc.h,v $"
-#define _ACYC_H_DATE     "$Date: 2015/08/06 10:23:33 $"
-#define _ACYC_H_REVISION "$Revision: 1.6 $"
+#define _ACYC_H_DATE     "$Date: 2023/02/25 14:03:00 $"
+#define _ACYC_H_REVISION "$Revision: 1.7 $"
 
 extern void _version_acyc_c();
 
@@ -80,7 +80,6 @@ extern int acyc_cnf_size(GRAPH *graphs, int flavor,
 			 int *clause_cnt, int newatom);
 extern void tr_acyc_into_cnf(int style, int flavor, FILE *out,
 			     GRAPH *graphs, int weight_sum);
-extern void tr_acyc_symbols(int style, FILE *out, GRAPH *graph);
+extern void tr_acyc_symbols(int style, FILE *out, GRAPH *graph, int symbols);
 extern void tr_acyc_external(int style, FILE *out, GRAPH *graph);
 extern void tr_acyc_choices(int style, FILE *out, GRAPH *graph, ATAB*table);
-
